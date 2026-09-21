@@ -14,9 +14,9 @@ class PMUDataRecord:
     fraction_of_second: int
     time_synchronized: bool
     data_valid: bool
-    phasors: List[Tuple[float, float]]  # (Magnitude, Phase Angle in radians)
+    phasors: List[Tuple[float, float]]
     frequency_hz: float
-    rocof: float  # Rate of change of frequency (Hz/s)
+    rocof: float
 
 
 class C37118FrameParser:
@@ -27,10 +27,7 @@ class C37118FrameParser:
     def unpack_data_frame(
         payload: bytes, num_phasors: int = 1, is_floating: bool = True
     ) -> PMUDataRecord:
-        """
-        Unpack a single IEEE C37.118.2 data frame with strict length and boundary checks.
-        Expects Big-Endian byte order.
-        """
+        """Unpack a single IEEE C37.118.2 data frame with boundary checks."""
         if len(payload) < 14:
             raise ValueError(f"Packet undersized: {len(payload)} bytes (minimum 14 required).")
 
@@ -44,23 +41,19 @@ class C37118FrameParser:
             )
 
         soc, fracsec_raw = struct.unpack(">II", payload[6:14])
-        # Top 8 bits of FRACSEC store time quality flags, lower 24 bits are fraction
         fracsec = fracsec_raw & 0x00FFFFFF
 
-        # Parse STAT word
         offset = 14
         if len(payload) < offset + 2:
             raise ValueError("Premature EOF reading STAT word.")
         stat = struct.unpack(">H", payload[offset:offset + 2])[0]
         offset += 2
 
-        # STAT bits: Bit 15 = Data Valid (0 = valid, 1 = invalid), Bit 13 = Clock Sync
         data_valid = not bool(stat & 0x8000)
         time_sync = not bool(stat & 0x2000)
 
         phasors: List[Tuple[float, float]] = []
         if is_floating:
-            # 8 bytes per phasor (2x float32: Real, Imag or Mag, Angle)
             expected_p_bytes = num_phasors * 8
             if len(payload) < offset + expected_p_bytes + 8:
                 raise ValueError("Payload insufficient for declared floating-point channels.")
@@ -73,7 +66,6 @@ class C37118FrameParser:
             freq, rocof = struct.unpack(">ff", payload[offset:offset + 8])
             offset += 8
         else:
-            # 4 bytes per phasor (2x int16)
             expected_p_bytes = num_phasors * 4
             if len(payload) < offset + expected_p_bytes + 4:
                 raise ValueError("Payload insufficient for declared fixed-point channels.")
@@ -110,9 +102,9 @@ class C37118FrameParser:
         rocof: float = 0.0,
         sync_valid: bool = True,
     ) -> bytes:
-        """Helper to construct standard C37.118 data frames for integration tests."""
+        """Construct standard C37.118 data frames for testing."""
         sync = C37118FrameParser.DATA_SYNC
-        frame_size = 32  # 14 (header) + 2 (stat) + 8 (1 phasor float) + 8 (freq/rocof float)
+        frame_size = 32
         stat = 0x0000 if sync_valid else 0x2000
 
         header = struct.pack(">HHHIIH", sync, frame_size, station_id, soc, fracsec, stat)

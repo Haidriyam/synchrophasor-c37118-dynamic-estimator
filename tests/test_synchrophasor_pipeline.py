@@ -45,38 +45,24 @@ class TestSynchrophasorPipeline(unittest.TestCase):
     def test_ekf_tracking_convergence(self):
         np.random.seed(42)
         Vt = 1.0
+        true_delta = 0.40
+        true_w_dev = 0.0
+        P_max = (self.ekf.E_p * Vt) / self.ekf.Xd_p
+        Pm_eq = P_max * np.sin(true_delta)
+        true_Pe = Pm_eq
 
-        # True physical state
-        true_delta = 0.35
-        true_omega_dev = 0.0
-        true_Eq_p = 1.05
-        true_Ed_p = 0.0
-        true_state = np.array([true_delta, true_omega_dev, true_Eq_p, true_Ed_p])
+        # Start with an offset initial state estimate
+        self.ekf.x = np.array([0.60, 0.20], dtype=np.float64)
 
-        # Compute consistent steady-state equilibrium power and field voltage
-        Id0 = (true_Eq_p - Vt * np.cos(true_delta)) / self.ekf.Xdp
-        Iq0 = (-true_Ed_p + Vt * np.sin(true_delta)) / self.ekf.Xqp
-        Pm_eq = Vt * np.sin(true_delta) * Id0 + Vt * np.cos(true_delta) * Iq0
-        Efd_eq = true_Eq_p + (self.ekf.Xd - self.ekf.Xdp) * Id0
-
-        z_nominal = self.ekf.compute_measurement_h(true_state, Vt=Vt)
-
-        # Perturb the initial state guess in the estimator
-        self.ekf.x = np.array([0.45, 0.01, 0.95, 0.05], dtype=np.float64)
-
-        # Run EKF across 60 steps
         out = {}
-        for _ in range(60):
-            noisy_z = (
-                float(z_nominal[0] + np.random.normal(0, 0.002)),
-                float(z_nominal[1] + np.random.normal(0, 0.002))
-            )
-            out = self.ekf.step(z_measured=noisy_z, Vt=Vt, Pm=Pm_eq, Efd=Efd_eq)
+        for _ in range(80):
+            measured_Pe = float(true_Pe + np.random.normal(0, 0.005))
+            out = self.ekf.step(Pe_measured=measured_Pe, Vt=Vt, Pm=Pm_eq)
 
-        # Assert convergence to true state within tight error bounds
+        # Assert convergence to true states
         self.assertAlmostEqual(out["rotor_angle_rad"], true_delta, delta=0.03)
-        self.assertAlmostEqual(out["speed_deviation_pu"], 0.0, delta=0.01)
-        self.assertLess(out["innovation_norm"], 0.05)
+        self.assertAlmostEqual(out["speed_deviation_rad_s"], true_w_dev, delta=0.02)
+        self.assertLess(abs(out["innovation"]), 0.05)
 
 
 if __name__ == "__main__":
