@@ -34,7 +34,6 @@ class SynchronousGeneratorEKF:
         delta, d_omega, Eq_p, Ed_p = x
 
         # Stator electrical power calculations
-        # Id, Iq projection from terminal bus reference
         Id = (Eq_p - Vt * np.cos(delta)) / self.Xdp
         Iq = (-Ed_p + Vt * np.sin(delta)) / self.Xqp
         Pe = Vt * np.sin(delta) * Id + Vt * np.cos(delta) * Iq
@@ -56,15 +55,15 @@ class SynchronousGeneratorEKF:
         F[0, 1] = self.omega_0 * self.dt
 
         # Partial derivatives of electrical torque Pe with respect to delta
-        term1 = (Vt**2 / self.Xdp) * np.sin(delta)**2
-        term2 = (Vt**2 / self.Xqp) * np.cos(delta)**2
+        term1 = (Vt**2 / self.Xdp) * (np.sin(delta)**2)
+        term2 = (Vt**2 / self.Xqp) * (np.cos(delta)**2)
         term3 = (Vt / self.Xdp) * x[2] * np.cos(delta)
         dPe_ddelta = term1 - term2 + term3
 
-        F[1, 0] = - (self.dt / (2.0 * self.H)) * dPe_ddelta
+        F[1, 0] = -(self.dt / (2.0 * self.H)) * dPe_ddelta
         F[1, 1] = 1.0 - (self.dt * self.D) / (2.0 * self.H)
-        F[1, 2] = - (self.dt / (2.0 * self.H)) * ((Vt / self.Xdp) * np.sin(delta))
-        F[1, 3] = - (self.dt / (2.0 * self.H)) * ((Vt / self.Xqp) * np.cos(delta))
+        F[1, 2] = -(self.dt / (2.0 * self.H)) * ((Vt / self.Xdp) * np.sin(delta))
+        F[1, 3] = -(self.dt / (2.0 * self.H)) * ((Vt / self.Xqp) * np.cos(delta))
 
         # Field voltage dissipation decay terms
         F[2, 2] = 1.0 - (self.dt / self.Tdo_p) * (self.Xd / self.Xdp)
@@ -91,9 +90,11 @@ class SynchronousGeneratorEKF:
         H[0, 2] = (Vt / self.Xdp) * np.sin(delta)
         H[0, 3] = (Vt / self.Xqp) * np.cos(delta)
 
-        H[1, 0] = - (Vt**2 / self.Xdp) * np.sin(delta)**2 - (Vt**2 / self.Xqp) * np.cos(delta)**2
+        term_sin = (Vt**2 / self.Xdp) * (np.sin(delta)**2)
+        term_cos = (Vt**2 / self.Xqp) * (np.cos(delta)**2)
+        H[1, 0] = -term_sin - term_cos
         H[1, 2] = (Vt / self.Xdp) * np.cos(delta)
-        H[1, 3] = - (Vt / self.Xqp) * np.sin(delta)
+        H[1, 3] = -(Vt / self.Xqp) * np.sin(delta)
 
         return H
 

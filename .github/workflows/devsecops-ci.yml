@@ -32,6 +32,10 @@ jobs:
       - name: PEP8 Code Hygiene Enforcement
         run: |
           flake8 estimator/ tests/ --count --ignore=W292 --max-line-length=100 --statistics
+          - name: PEP8 Code Hygiene Enforcement
+          
+        run: |
+          flake8 estimator/ tests/ --count --ignore=W292,W503 --max-line-length=100 --statistics
 
       - name: Execute Numerical & Boundary Test Suite
         run: |

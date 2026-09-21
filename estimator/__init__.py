@@ -1,7 +1,7 @@
 """
-Synchrophasor IEEE C37.118 Streaming Ingress & Dynamic Generator State Estimator.
+IEEE C37.118 Synchrophasor Telemetry & Generator EKF Estimator Module.
 """
-from estimator.pmu_parser import PMUFrameParser, PMUDataFrame
-from estimator.generator_ekf import GeneratorDynamicEKF
+from estimator.c37118_parser import C37118FrameParser, PMUDataRecord
+from estimator.generator_ekf import SynchronousGeneratorEKF
 
-__all__ = ["PMUFrameParser", "PMUDataFrame", "GeneratorDynamicEKF"]
+__all__ = ["C37118FrameParser", "PMUDataRecord", "SynchronousGeneratorEKF"]
