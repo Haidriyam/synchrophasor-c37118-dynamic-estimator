@@ -22,23 +22,23 @@ class SynchronousGeneratorEKF:
         self.Tqo_p = 0.4      # q-axis open-circuit transient time constant
 
         # State vector: [delta (rad), Delta_omega (p.u.), E'_q (p.u.), E'_d (p.u.)]
-        self.x = np.array([0.15, 0.0, 1.05, 0.0], dtype=np.float64)
+        self.x = np.array([0.35, 0.0, 1.05, 0.0], dtype=np.float64)
 
         # Covariance matrices
-        self.P = np.eye(4, dtype=np.float64) * 1e-3
-        self.Q = np.diag([1e-6, 1e-5, 1e-4, 1e-4])  # Process noise
-        self.R = np.diag([1e-4, 1e-4])              # Measurement noise (P_e, Q_e)
+        self.P = np.eye(4, dtype=np.float64) * 1e-2
+        self.Q = np.diag([1e-5, 1e-5, 1e-4, 1e-4])  # Process noise
+        self.R = np.diag([1e-4, 1e-4])              # Measurement noise (Pe, Qe)
 
     def state_transition(self, x: np.ndarray, Pm: float, Efd: float, Vt: float) -> np.ndarray:
-        """Continuous dynamic equations evaluated via RK4 integration."""
+        """Continuous dynamic equations evaluated via forward Euler integration."""
         delta, d_omega, Eq_p, Ed_p = x
 
-        # Stator electrical power calculations
+        # Stator current projection
         Id = (Eq_p - Vt * np.cos(delta)) / self.Xdp
         Iq = (-Ed_p + Vt * np.sin(delta)) / self.Xqp
         Pe = Vt * np.sin(delta) * Id + Vt * np.cos(delta) * Iq
 
-        # Differential equations
+        # 4th-order machine differential equations
         d_delta = self.omega_0 * d_omega
         d_d_omega = (1.0 / (2.0 * self.H)) * (Pm - Pe - self.D * d_omega)
         d_Eq_p = (1.0 / self.Tdo_p) * (Efd - Eq_p - (self.Xd - self.Xdp) * Id)
@@ -47,27 +47,18 @@ class SynchronousGeneratorEKF:
         f_dyn = np.array([d_delta, d_d_omega, d_Eq_p, d_Ed_p], dtype=np.float64)
         return x + self.dt * f_dyn
 
-    def compute_jacobian_f(self, x: np.ndarray, Vt: float) -> np.ndarray:
-        """Analytic state transition Jacobian F_k = df/dx."""
-        delta, _, _, _ = x
-        F = np.eye(4, dtype=np.float64)
+    def compute_jacobian_f(self, x: np.ndarray, Pm: float, Efd: float, Vt: float) -> np.ndarray:
+        """Finite-difference numerical Jacobian for state transition."""
+        eps = 1e-6
+        n = len(x)
+        F = np.zeros((n, n), dtype=np.float64)
+        fx = self.state_transition(x, Pm, Efd, Vt)
 
-        F[0, 1] = self.omega_0 * self.dt
-
-        # Partial derivatives of electrical torque Pe with respect to delta
-        term1 = (Vt**2 / self.Xdp) * (np.sin(delta)**2)
-        term2 = (Vt**2 / self.Xqp) * (np.cos(delta)**2)
-        term3 = (Vt / self.Xdp) * x[2] * np.cos(delta)
-        dPe_ddelta = term1 - term2 + term3
-
-        F[1, 0] = -(self.dt / (2.0 * self.H)) * dPe_ddelta
-        F[1, 1] = 1.0 - (self.dt * self.D) / (2.0 * self.H)
-        F[1, 2] = -(self.dt / (2.0 * self.H)) * ((Vt / self.Xdp) * np.sin(delta))
-        F[1, 3] = -(self.dt / (2.0 * self.H)) * ((Vt / self.Xqp) * np.cos(delta))
-
-        # Field voltage dissipation decay terms
-        F[2, 2] = 1.0 - (self.dt / self.Tdo_p) * (self.Xd / self.Xdp)
-        F[3, 3] = 1.0 - (self.dt / self.Tqo_p) * (self.Xq / self.Xqp)
+        for i in range(n):
+            x_pert = x.copy()
+            x_pert[i] += eps
+            fx_pert = self.state_transition(x_pert, Pm, Efd, Vt)
+            F[:, i] = (fx_pert - fx) / eps
 
         return F
 
@@ -82,19 +73,16 @@ class SynchronousGeneratorEKF:
         return np.array([Pe, Qe], dtype=np.float64)
 
     def compute_jacobian_h(self, x: np.ndarray, Vt: float) -> np.ndarray:
-        """Observation Jacobian H_k = dh/dx."""
-        delta, _, _, _ = x
+        """Finite-difference numerical Jacobian for observation function."""
+        eps = 1e-6
         H = np.zeros((2, 4), dtype=np.float64)
+        hx = self.compute_measurement_h(x, Vt)
 
-        H[0, 0] = (Vt**2 / self.Xdp - Vt**2 / self.Xqp) * np.sin(2 * delta)
-        H[0, 2] = (Vt / self.Xdp) * np.sin(delta)
-        H[0, 3] = (Vt / self.Xqp) * np.cos(delta)
-
-        term_sin = (Vt**2 / self.Xdp) * (np.sin(delta)**2)
-        term_cos = (Vt**2 / self.Xqp) * (np.cos(delta)**2)
-        H[1, 0] = -term_sin - term_cos
-        H[1, 2] = (Vt / self.Xdp) * np.cos(delta)
-        H[1, 3] = -(Vt / self.Xqp) * np.sin(delta)
+        for i in range(4):
+            x_pert = x.copy()
+            x_pert[i] += eps
+            hx_pert = self.compute_measurement_h(x_pert, Vt)
+            H[:, i] = (hx_pert - hx) / eps
 
         return H
 
@@ -102,8 +90,8 @@ class SynchronousGeneratorEKF:
         self,
         z_measured: Tuple[float, float],
         Vt: float,
-        Pm: float = 0.8,
-        Efd: float = 1.1
+        Pm: float,
+        Efd: float
     ) -> Dict[str, float]:
         """
         Execute one prediction-update cycle of the EKF.
@@ -111,7 +99,7 @@ class SynchronousGeneratorEKF:
         """
         # 1. Prediction step
         x_pred = self.state_transition(self.x, Pm, Efd, Vt)
-        F = self.compute_jacobian_f(self.x, Vt)
+        F = self.compute_jacobian_f(self.x, Pm, Efd, Vt)
         P_pred = F @ self.P @ F.T + self.Q
 
         # 2. Innovation step

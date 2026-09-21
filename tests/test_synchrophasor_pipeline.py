@@ -31,7 +31,6 @@ class TestSynchrophasorPipeline(unittest.TestCase):
         self.assertAlmostEqual(record.frequency_hz, 50.01, places=2)
 
     def test_c37118_corrupted_header_rejection(self):
-        # Generate packet with bad SYNC header word
         raw = bytearray(self.parser.pack_test_frame(1, 0, 0, 1.0, 0.0, 50.0))
         raw[0] = 0xFF
         with self.assertRaises(ValueError) as ctx:
@@ -44,28 +43,40 @@ class TestSynchrophasorPipeline(unittest.TestCase):
         self.assertIn("Packet undersized", str(ctx.exception))
 
     def test_ekf_tracking_convergence(self):
-        # True equilibrium operational point for terminal voltage Vt=1.0, Pm=0.8
+        np.random.seed(42)
         Vt = 1.0
+
+        # True physical state
         true_delta = 0.35
         true_omega_dev = 0.0
-        true_Eq_p = 1.08
-        true_Ed_p = -0.05
-
+        true_Eq_p = 1.05
+        true_Ed_p = 0.0
         true_state = np.array([true_delta, true_omega_dev, true_Eq_p, true_Ed_p])
+
+        # Compute consistent steady-state equilibrium power and field voltage
+        Id0 = (true_Eq_p - Vt * np.cos(true_delta)) / self.ekf.Xdp
+        Iq0 = (-true_Ed_p + Vt * np.sin(true_delta)) / self.ekf.Xqp
+        Pm_eq = Vt * np.sin(true_delta) * Id0 + Vt * np.cos(true_delta) * Iq0
+        Efd_eq = true_Eq_p + (self.ekf.Xd - self.ekf.Xdp) * Id0
+
         z_nominal = self.ekf.compute_measurement_h(true_state, Vt=Vt)
 
-        # Iterate EKF over 50 steps from a disturbed initial guess
-        for _ in range(50):
-            noisy_z = (
-                z_nominal[0] + np.random.normal(0, 0.005),
-                z_nominal[1] + np.random.normal(0, 0.005)
-            )
-            out = self.ekf.step(z_measured=noisy_z, Vt=Vt, Pm=0.8, Efd=1.1)
+        # Perturb the initial state guess in the estimator
+        self.ekf.x = np.array([0.45, 0.01, 0.95, 0.05], dtype=np.float64)
 
-        # Verify estimated rotor angle and speed deviation converge within bound
-        self.assertAlmostEqual(out["rotor_angle_rad"], true_delta, delta=0.08)
-        self.assertAlmostEqual(out["speed_deviation_pu"], 0.0, delta=0.02)
-        self.assertLess(out["innovation_norm"], 0.1)
+        # Run EKF across 60 steps
+        out = {}
+        for _ in range(60):
+            noisy_z = (
+                float(z_nominal[0] + np.random.normal(0, 0.002)),
+                float(z_nominal[1] + np.random.normal(0, 0.002))
+            )
+            out = self.ekf.step(z_measured=noisy_z, Vt=Vt, Pm=Pm_eq, Efd=Efd_eq)
+
+        # Assert convergence to true state within tight error bounds
+        self.assertAlmostEqual(out["rotor_angle_rad"], true_delta, delta=0.03)
+        self.assertAlmostEqual(out["speed_deviation_pu"], 0.0, delta=0.01)
+        self.assertLess(out["innovation_norm"], 0.05)
 
 
 if __name__ == "__main__":
