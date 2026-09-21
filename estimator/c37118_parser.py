@@ -4,7 +4,7 @@ Parses streaming binary data frames (SYNC 0xAA01) and validates timing invariant
 """
 from dataclasses import dataclass
 import struct
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 
 
 @dataclass(frozen=True)

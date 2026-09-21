@@ -56,11 +56,11 @@ class SynchronousGeneratorEKF:
         F[0, 1] = self.omega_0 * self.dt
 
         # Partial derivatives of electrical torque Pe with respect to delta
-        dPe_ddelta = (
-            (Vt**2 / self.Xdp) * np.sin(delta)**2
-            - (Vt**2 / self.Xqp) * np.cos(delta)**2
-            + (Vt / self.Xdp) * x[2] * np.cos(delta)
-        )
+        term1 = (Vt**2 / self.Xdp) * np.sin(delta)**2
+        term2 = (Vt**2 / self.Xqp) * np.cos(delta)**2
+        term3 = (Vt / self.Xdp) * x[2] * np.cos(delta)
+        dPe_ddelta = term1 - term2 + term3
+
         F[1, 0] = - (self.dt / (2.0 * self.H)) * dPe_ddelta
         F[1, 1] = 1.0 - (self.dt * self.D) / (2.0 * self.H)
         F[1, 2] = - (self.dt / (2.0 * self.H)) * ((Vt / self.Xdp) * np.sin(delta))
